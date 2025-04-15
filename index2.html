@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fourier Drawing Tool with Animation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .control-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .button {
+            padding: 8px 15px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .button:hover {
+            background-color: #2980b9;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+        }
+        .slider-label {
+            margin-right: 10px;
+            font-weight: bold;
+            min-width: 120px;
+        }
+        input[type="range"] {
+            flex-grow: 1;
+            accent-color: #3498db;
+        }
+        .value-display {
+            margin-left: 10px;
+            min-width: 30px;
+            text-align: center;
+        }
+        canvas {
+            width: 100%;
+            height: 300px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            background-color: white;
+            cursor: crosshair;
+        }
+        .wave-container {
+            margin-bottom: 30px;
+        }
+        .wave-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #2c3e50;
+        }
+        .info {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+        .status {
+            font-style: italic;
+            color: #7f8c8d;
+            margin-top: 10px;
+        }
+        .animation-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .circle-container {
+            position: relative;
+            margin-top: 20px;
+        }
+        .circle-label {
+            position: absolute;
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Fourier Drawing Tool with Animation</h1>
+        <p class="info">Draw any shape, then see it built from rotating harmonic circles (epicycles).</p>
+        
+        <div class="control-panel">
+            <button id="drawButton" class="button">Draw Mode</button>
+            <button id="calculateButton" class="button">Calculate Fourier Series</button>
+            <button id="clearButton" class="button">Clear Canvas</button>
+            
+            <div class="slider-container">
+                <span class="slider-label">Harmonics:</span>
+                <input type="range" id="harmonicSlider" min="1" max="100" value="1" step="1" disabled>
+                <span class="value-display" id="harmonicValue">1</span>
+            </div>
+        </div>
+        
+        <div class="wave-container">
+            <div class="wave-title">Draw Your Shape Here</div>
+            <canvas id="drawingCanvas"></canvas>
+            <div id="status" class="status">Draw your shape with mouse or touch</div>
+        </div>
+        
+        <div class="wave-container">
+            <div class="wave-title">Fourier Approximation</div>
+            <canvas id="fourierCanvas"></canvas>
+        </div>
+        
+        <div class="wave-container">
+            <div class="wave-title">Harmonic Circles Animation</div>
+            <canvas id="animationCanvas"></canvas>
+            <div class="animation-controls">
+                <button id="playButton" class="button" disabled>Play</button>
+                <button id="pauseButton" class="button" disabled>Pause</button>
+                <span id="timeDisplay">0.00</span>
+            </div>
+        </div>
+        
+        <div class="wave-container">
+            <div class="wave-title">Individual Harmonics</div>
+            <canvas id="harmonicsCanvas"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const drawButton = document.getElementById('drawButton');
+        const calculateButton = document.getElementById('calculateButton');
+        const clearButton = document.getElementById('clearButton');
+        const harmonicSlider = document.getElementById('harmonicSlider');
+        const harmonicValue = document.getElementById('harmonicValue');
+        const drawingCanvas = document.getElementById('drawingCanvas');
+        const fourierCanvas = document.getElementById('fourierCanvas');
+        const animationCanvas = document.getElementById('animationCanvas');
+        const harmonicsCanvas = document.getElementById('harmonicsCanvas');
+        const statusElement = document.getElementById('status');
+        const playButton = document.getElementById('playButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const timeDisplay = document.getElementById('timeDisplay');
+        
+        // Canvas contexts
+        let drawingCtx, fourierCtx, animationCtx, harmonicsCtx;
+        
+        // Drawing variables
+        let isDrawing = false;
+        let drawnPoints = [];
+        let fourierCoefficients = [];
+        let isFourierCalculated = false;
+        
+        // Animation variables
+        let animationId = null;
+        let animationTime = 0;
+        let isPlaying = false;
+        let pathPoints = [];
+        const maxPathPoints = 500;
+        
+        // Initialize canvases
+        function setupCanvases() {
+            const dpr = window.devicePixelRatio || 1;
+            
+            // Drawing canvas
+            const drawingRect = drawingCanvas.getBoundingClientRect();
+            drawingCanvas.width = drawingRect.width * dpr;
+            drawingCanvas.height = drawingRect.height * dpr;
+            drawingCtx = drawingCanvas.getContext('2d');
+            drawingCtx.scale(dpr, dpr);
+            drawingCtx.lineWidth = 2;
+            drawingCtx.strokeStyle = '#2c3e50';
+            
+            // Fourier canvas
+            const fourierRect = fourierCanvas.getBoundingClientRect();
+            fourierCanvas.width = fourierRect.width * dpr;
+            fourierCanvas.height = fourierRect.height * dpr;
+            fourierCtx = fourierCanvas.getContext('2d');
+            fourierCtx.scale(dpr, dpr);
+            
+            // Animation canvas
+            const animationRect = animationCanvas.getBoundingClientRect();
+            animationCanvas.width = animationRect.width * dpr;
+            animationCanvas.height = animationRect.height * dpr;
+            animationCtx = animationCanvas.getContext('2d');
+            animationCtx.scale(dpr, dpr);
+            
+            // Harmonics canvas
+            const harmonicsRect = harmonicsCanvas.getBoundingClientRect();
+            harmonicsCanvas.width = harmonicsRect.width * dpr;
+            harmonicsCanvas.height = harmonicsRect.height * dpr;
+            harmonicsCtx = harmonicsCanvas.getContext('2d');
+            harmonicsCtx.scale(dpr, dpr);
+        }
+        
+        // Drawing functions
+        function startDrawing(e) {
+            if (isFourierCalculated) return;
+            
+            isDrawing = true;
+            drawnPoints = [];
+            clearCanvas(drawingCtx, drawingCanvas);
+            const pos = getCanvasPosition(e);
+            drawnPoints.push(pos);
+            statusElement.textContent = "Drawing...";
+        }
+        
+        function draw(e) {
+            if (!isDrawing || isFourierCalculated) return;
+            
+            const pos = getCanvasPosition(e);
+            drawnPoints.push(pos);
+            
+            // Draw line
+            drawingCtx.beginPath();
+            drawingCtx.moveTo(drawnPoints[drawnPoints.length-2].x, drawnPoints[drawnPoints.length-2].y);
+            drawingCtx.lineTo(pos.x, pos.y);
+            drawingCtx.stroke();
+        }
+        
+        function stopDrawing() {
+            isDrawing = false;
+            if (drawnPoints.length > 10) {
+                statusElement.textContent = "Drawing complete. Click 'Calculate Fourier Series'";
+            } else {
+                statusElement.textContent = "Draw a longer shape for better results";
+            }
+        }
+        
+        function getCanvasPosition(e) {
+            const rect = drawingCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            return { x, y };
+        }
+        
+        function clearCanvas(ctx, canvas) {
+            const width = canvas.width / (window.devicePixelRatio || 1);
+            const height = canvas.height / (window.devicePixelRatio || 1);
+            ctx.clearRect(0, 0, width, height);
+        }
+        
+        // Fourier transform functions
+        function calculateFourierSeries() {
+            if (drawnPoints.length < 10) {
+                statusElement.textContent = "Please draw a longer shape first";
+                return;
+            }
+            
+            statusElement.textContent = "Calculating Fourier series...";
+            setTimeout(() => {
+                // Prepare data for DFT
+                const complexPoints = drawnPoints.map(p => ({
+                    x: p.x / drawingCanvas.width * (window.devicePixelRatio || 1) * 2 - 1,
+                    y: 1 - p.y / drawingCanvas.height * (window.devicePixelRatio || 1) * 2
+                }));
+                
+                // Perform DFT on x and y coordinates
+                fourierCoefficients = [];
+                const N = complexPoints.length;
+                
+                for (let k = -50; k <= 50; k++) {
+                    let sumX = 0;
+                    let sumY = 0;
+                    
+                    for (let n = 0; n < N; n++) {
+                        const angle = (-2 * Math.PI * k * n) / N;
+                        const c = complexPoints[n];
+                        sumX += c.x * Math.cos(angle) - c.y * Math.sin(angle);
+                        sumY += c.y * Math.cos(angle) + c.x * Math.sin(angle);
+                    }
+                    
+                    fourierCoefficients.push({
+                        freq: k,
+                        amp: Math.sqrt(sumX*sumX + sumY*sumY) / N,
+                        phase: Math.atan2(sumY, sumX),
+                        re: sumX / N,
+                        im: sumY / N
+                    });
+                }
+                
+                // Sort by amplitude
+                fourierCoefficients.sort((a, b) => b.amp - a.amp);
+                
+                isFourierCalculated = true;
+                harmonicSlider.disabled = false;
+                harmonicSlider.max = Math.min(100, fourierCoefficients.length);
+                playButton.disabled = false;
+                pauseButton.disabled = false;
+                statusElement.textContent = "Fourier series calculated. Adjust harmonics slider or play animation.";
+                updateFourierApproximation(1);
+            }, 100);
+        }
+        
+        function updateFourierApproximation(nHarmonics) {
+            if (!isFourierCalculated) return;
+            
+            const width = fourierCanvas.width / (window.devicePixelRatio || 1);
+            const height = fourierCanvas.height / (window.devicePixelRatio || 1);
+            const animWidth = animationCanvas.width / (window.devicePixelRatio || 1);
+            const animHeight = animationCanvas.height / (window.devicePixelRatio || 1);
+            
+            // Clear canvases
+            clearCanvas(fourierCtx, fourierCanvas);
+            clearCanvas(harmonicsCtx, harmonicsCanvas);
+            clearCanvas(animationCtx, animationCanvas);
+            
+            // Draw grid
+            drawGrid(fourierCtx, width, height);
+            drawGrid(harmonicsCtx, width, height);
+            drawGrid(animationCtx, animWidth, animHeight);
+            
+            // Calculate points for the approximation
+            const N = 500; // Number of points to draw
+            const points = [];
+            
+            for (let i = 0; i < N; i++) {
+                const t = i / N * 2 * Math.PI;
+                let x = 0;
+                let y = 0;
+                
+                // Sum the largest nHarmonics coefficients
+                for (let k = 0; k < nHarmonics; k++) {
+                    const coeff = fourierCoefficients[k];
+                    if (!coeff) break;
+                    
+                    const freq = coeff.freq;
+                    x += coeff.re * Math.cos(freq * t) - coeff.im * Math.sin(freq * t);
+                    y += coeff.re * Math.sin(freq * t) + coeff.im * Math.cos(freq * t);
+                }
+                
+                points.push({ x, y });
+            }
+            
+            // Draw the approximation
+            fourierCtx.beginPath();
+            fourierCtx.strokeStyle = '#e74c3c';
+            fourierCtx.lineWidth = 2;
+            
+            for (let i = 0; i < points.length; i++) {
+                const x = (points[i].x + 1) * width / 2;
+                const y = (1 - points[i].y) * height / 2;
+                
+                if (i === 0) {
+                    fourierCtx.moveTo(x, y);
+                } else {
+                    fourierCtx.lineTo(x, y);
+                }
+            }
+            
+            fourierCtx.stroke();
+            
+            // Draw individual harmonics
+            harmonicsCtx.strokeStyle = 'rgba(52, 152, 219, 0.5)';
+            harmonicsCtx.lineWidth = 1;
+            
+            for (let k = 0; k < Math.min(nHarmonics, 10); k++) {
+                const coeff = fourierCoefficients[k];
+                if (!coeff) break;
+                
+                const freq = coeff.freq;
+                const points = [];
+                
+                for (let i = 0; i < N; i++) {
+                    const t = i / N * 2 * Math.PI;
+                    const x = coeff.re * Math.cos(freq * t) - coeff.im * Math.sin(freq * t);
+                    const y = coeff.re * Math.sin(freq * t) + coeff.im * Math.cos(freq * t);
+                    points.push({ x, y });
+                }
+                
+                harmonicsCtx.beginPath();
+                for (let i = 0; i < points.length; i++) {
+                    const x = (points[i].x + 1) * width / 2;
+                    const y = (1 - points[i].y) * height / 2;
+                    
+                    if (i === 0) {
+                        harmonicsCtx.moveTo(x, y);
+                    } else {
+                        harmonicsCtx.lineTo(x, y);
+                    }
+                }
+                harmonicsCtx.stroke();
+            }
+            
+            harmonicValue.textContent = nHarmonics;
+            
+            // If animation is playing, update it
+            if (isPlaying) {
+                drawAnimation(animationTime);
+            }
+        }
+        
+        function drawGrid(ctx, width, height) {
+            ctx.strokeStyle = 'rgba(200, 200, 200, 0.5)';
+            ctx.lineWidth = 0.5;
+            
+            // Vertical lines
+            for (let x = 0; x <= width; x += width/4) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+            
+            // Horizontal lines
+            for (let y = 0; y <= height; y += height/2) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+        }
+        
+        // Animation functions
+        function drawAnimation(time) {
+            if (!isFourierCalculated) return;
+            
+            const width = animationCanvas.width / (window.devicePixelRatio || 1);
+            const height = animationCanvas.height / (window.devicePixelRatio || 1);
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const nHarmonics = parseInt(harmonicSlider.value);
+            
+            clearCanvas(animationCtx, animationCanvas);
+            drawGrid(animationCtx, width, height);
+            
+            let x = centerX;
+            let y = centerY;
+            let lastX = x;
+            let lastY = y;
+            
+            // Draw all circles
+            for (let k = 0; k < nHarmonics; k++) {
+                const coeff = fourierCoefficients[k];
+                if (!coeff) break;
+                
+                const freq = coeff.freq;
+                const radius = coeff.amp * width / 2 * 0.8;
+                const angle = freq * time + coeff.phase;
+                
+                // Draw the circle
+                animationCtx.beginPath();
+                animationCtx.strokeStyle = 'rgba(52, 152, 219, 0.3)';
+                animationCtx.arc(x, y, radius, 0, 2 * Math.PI);
+                animationCtx.stroke();
+                
+                // Draw the rotating line
+                animationCtx.beginPath();
+                animationCtx.moveTo(x, y);
+                const newX = x + radius * Math.cos(angle);
+                const newY = y + radius * Math.sin(angle);
+                animationCtx.lineTo(newX, newY);
+                animationCtx.strokeStyle = 'rgba(52, 152, 219, 0.7)';
+                animationCtx.stroke();
+                
+                // Draw a dot at the end
+                animationCtx.beginPath();
+                animationCtx.arc(newX, newY, 2, 0, 2 * Math.PI);
+                animationCtx.fillStyle = '#3498db';
+                animationCtx.fill();
+                
+                // Update position for next circle
+                x = newX;
+                y = newY;
+            }
+            
+            // Add the current point to the path
+            pathPoints.unshift({x, y});
+            if (pathPoints.length > maxPathPoints) {
+                pathPoints.pop();
+            }
+            
+            // Draw the path
+            animationCtx.beginPath();
+            animationCtx.moveTo(pathPoints[0].x, pathPoints[0].y);
+            for (let i = 1; i < pathPoints.length; i++) {
+                animationCtx.lineTo(pathPoints[i].x, pathPoints[i].y);
+            }
+            animationCtx.strokeStyle = '#e74c3c';
+            animationCtx.lineWidth = 2;
+            animationCtx.stroke();
+            
+            // Draw a dot at the current position
+            animationCtx.beginPath();
+            animationCtx.arc(x, y, 3, 0, 2 * Math.PI);
+            animationCtx.fillStyle = '#e74c3c';
+            animationCtx.fill();
+        }
+        
+        function animate() {
+            animationTime += 0.05;
+            timeDisplay.textContent = animationTime.toFixed(2);
+            drawAnimation(animationTime);
+            animationId = requestAnimationFrame(animate);
+        }
+        
+        function playAnimation() {
+            if (isPlaying) return;
+            isPlaying = true;
+            pathPoints = [];
+            animate();
+        }
+        
+        function pauseAnimation() {
+            if (!isPlaying) return;
+            isPlaying = false;
+            cancelAnimationFrame(animationId);
+        }
+        
+        function reset() {
+            isFourierCalculated = false;
+            drawnPoints = [];
+            fourierCoefficients = [];
+            harmonicSlider.disabled = true;
+            harmonicSlider.value = 1;
+            harmonicValue.textContent = "1";
+            playButton.disabled = true;
+            pauseButton.disabled = true;
+            pauseAnimation();
+            animationTime = 0;
+            timeDisplay.textContent = "0.00";
+            pathPoints = [];
+            clearCanvas(drawingCtx, drawingCanvas);
+            clearCanvas(fourierCtx, fourierCanvas);
+            clearCanvas(animationCtx, animationCanvas);
+            clearCanvas(harmonicsCtx, harmonicsCanvas);
+            statusElement.textContent = "Draw your shape with mouse or touch";
+        }
+        
+        // Event listeners
+        drawingCanvas.addEventListener('mousedown', startDrawing);
+        drawingCanvas.addEventListener('mousemove', draw);
+        drawingCanvas.addEventListener('mouseup', stopDrawing);
+        drawingCanvas.addEventListener('mouseout', stopDrawing);
+        
+        // Touch support
+        drawingCanvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startDrawing(e.touches[0]);
+        });
+        drawingCanvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            draw(e.touches[0]);
+        });
+        drawingCanvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            stopDrawing();
+        });
+        
+        calculateButton.addEventListener('click', calculateFourierSeries);
+        clearButton.addEventListener('click', reset);
+        harmonicSlider.addEventListener('input', () => {
+            updateFourierApproximation(parseInt(harmonicSlider.value));
+        });
+        playButton.addEventListener('click', playAnimation);
+        pauseButton.addEventListener('click', pauseAnimation);
+        
+        // Initialize
+        setupCanvases();
+        window.addEventListener('resize', setupCanvases);
+    </script>
+</body>
+</html>
